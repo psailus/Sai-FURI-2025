@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DUI & Traffic Fatalities Stats + Predictive Model</title>
+  <style>
+    /* Global Styles */
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #2c2c2c;
+      font-family: Arial, sans-serif;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      background-color: #444;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      max-width: 500px;
+      width: 90%;
+      text-align: center;
+      margin-top: 20px;
+    }
+    h1, h2 { margin-bottom: 10px; }
+    p { margin: 8px 0; }
+    label { display: inline-block; margin-bottom: 5px; }
+    input[type="text"] {
+      width: 80%; padding: 10px; font-size: 16px;
+      border: none; border-radius: 5px;
+      background-color: #666; color: #fff;
+      margin-bottom: 10px;
+    }
+    input[type="text"]::placeholder { color: #ccc; }
+    button {
+      padding: 10px 20px; font-size: 16px;
+      border: none; border-radius: 5px;
+      background-color: #888; color: #fff;
+      cursor: pointer; transition: background-color 0.3s ease;
+      margin: 5px;
+    }
+    button:hover { background-color: #aaa; }
+    #result {
+      margin-top: 20px; min-height: 60px;
+      opacity: 0; transition: opacity 0.5s ease;
+    }
+    #result.show { opacity: 1; }
+    .chart-container {
+      width: 95%; max-width: 800px;
+      margin: 20px 0 40px;
+      background-color: #444; padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      display: none;
+    }
+    .canvas-wrapper { position: relative; }
+    canvas { background-color: #2c2c2c; display: block; }
+    .blink-circle {
+      position: absolute;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      width: 16px; height: 16px;
+      transform: translate(-50%, -50%);
+      animation: blink 1s infinite;
+      pointer-events: none;
+    }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>DUI & Traffic Fatalities Stats</h1>
+    <label for="yearInput">Enter a year (1980–2030):</label><br>
+    <input type="text" id="yearInput" placeholder="e.g., 1985"><br>
+    <button id="getDataButton">Get Data</button>
+    <button id="resetDataButton">Reset</button>
+    <div id="result" aria-live="polite"></div>
+  </div>
+
+  <!-- Line chart -->
+  <div class="chart-container" id="chartContainer">
+    <h2>Historical vs. Forecast</h2>
+    <div class="canvas-wrapper">
+      <canvas id="chartCanvas" width="600" height="400"></canvas>
+      <div id="blinkOverlay"></div>
+    </div>
+  </div>
+
+  <!-- Doughnut chart -->
+  <div class="chart-container" id="donutContainer">
+    <h2>Decade Breakdown (%)</h2>
+    <div class="canvas-wrapper">
+      <canvas id="donutCanvas" width="600" height="400"></canvas>
+    </div>
+  </div>
+
+  <!-- Bar chart -->
+  <div class="chart-container" id="barContainer">
+    <h2>Decade DUI Fatalities (Total)</h2>
+    <div class="canvas-wrapper">
+      <canvas id="barCanvas" width="600" height="400"></canvas>
+    </div>
+  </div>
+
+  <!-- Percentage chart -->
+  <div class="chart-container" id="percentContainer">
+    <h2>DUI Fatalities as % of Total Fatalities</h2>
+    <div class="canvas-wrapper">
+      <canvas id="percentCanvas" width="600" height="400"></canvas>
+      <div id="percentBlink"></div>
+    </div>
+  </div>
+
+  <script>
+    Chart.register(ChartDataLabels);
+
+    // -- Full data with custom % values --
+    const duiData = {
+      1980: { total: 51091, drunk: 21113, percentage: 41.3 },
+      1981: { total: null,  drunk: null,  percentage: null },
+      1982: { total: 43345, drunk: 17970, percentage: 46.6 },
+      1983: { total: 42196, drunk: 17390, percentage: 44.4 },
+      1984: { total: 44589, drunk: 19271, percentage: 41.4 },
+      1985: { total: 43825, drunk: 18625, percentage: 40.0 },
+      1986: { total: 46166, drunk: 20221, percentage: 40.6 },
+      1987: { total: 46183, drunk: 19997, percentage: 40.3 },
+      1988: { total: 47287, drunk: 21623, percentage: 40.1 },
+      1989: { total: 46007, drunk: 20814, percentage: 39.0 },
+
+      1990: { total: 44499, drunk: 20376, percentage: 39.0 },
+      1991: { total: 41811, drunk: 19038, percentage: 38.1 },
+      1992: { total: 39419, drunk: 17661, percentage: 38.5 },
+      1993: { total: 40150, drunk: 17908, percentage: 35.7 },
+      1994: { total: 40676, drunk: 17432, percentage: 35.0 },
+      1995: { total: 41717, drunk: 17591, percentage: 32.2 },
+      1996: { total: 42196, drunk: 17408, percentage: 32.0 },
+      1997: { total: 41967, drunk: 17008, percentage: 31.1 },
+      1998: { total: 41117, drunk: 15806, percentage: 30.2 },
+      1999: { total: 41945, drunk: 16440, percentage: 30.1 },
+
+      2000: { total: 41059, drunk: 15986, percentage: 31.8 },
+      2001: { total: 42643, drunk: 17013, percentage: 31.5 },
+      2002: { total: 43005, drunk: 17013, percentage: 31.3 },
+      2003: { total: 42908, drunk: 16719, percentage: 30.7 },
+      2004: { total: 42708, drunk: 16319, percentage: 30.6 },
+      2005: { total: 43310, drunk: 16377, percentage: 31.2 },
+      2006: { total: 42884, drunk: 15987, percentage: 31.6 },
+      2007: { total: 41959, drunk: 14715, percentage: 31.6 },
+      2008: { total: 37423, drunk: 13199, percentage: 31.3 },
+      2009: { total: 36096, drunk: 11811, percentage: 31.7 },
+
+      2010: { total: 33283, drunk: 10608, percentage: 30.7 },
+      2011: { total: 32879, drunk: 10511, percentage: 30.4 },
+      2012: { total: 33782, drunk: 10896, percentage: 30.6 },
+      2013: { total: 35692, drunk: 10496, percentage: 30.7 },
+      2014: { total: 37006, drunk: 10511, percentage: 30.4 },
+      2015: { total: 37423, drunk: 10076, percentage: 29.1 },
+      2016: { total: 36835, drunk: 10328, percentage: 29.0 },
+      2017: { total: 36596, drunk: 10611, percentage: 29.0 },
+      2018: { total: 37461, drunk: 10896, percentage: 29.1 },
+      2019: { total: 42795, drunk: 11305, percentage: 28.1 },
+
+      2020: { total: 42715, drunk: 11154, percentage: 30.0 },
+      2021: { total: 42915, drunk: 11554, percentage: 31.2 },
+      2022: { total: 42839, drunk: 13068, percentage: 31.6 },
+      2023: { total: 42621, drunk: 12990, percentage: 30.5 },
+      2024: { total: 42460, drunk: 13058, percentage: 30.8, forecast: true },
+      2025: { total: 42342, drunk: 12999, percentage: 30.7, forecast: true },
+      2026: { total: 42255, drunk: 13050, percentage: 30.9, forecast: true },
+      2027: { total: 42192, drunk: 13005, percentage: 30.8, forecast: true },
+      2028: { total: 42145, drunk: 13044, percentage: 31.0, forecast: true },
+      2029: { total: 42110, drunk: 13010, percentage: 30.9, forecast: true },
+      2030: { total: 42085, drunk: 13040, percentage: 31.0, forecast: true }
+    };
+
+    // Split into actual vs forecast arrays
+    const yearsActual   = [], totalActual   = [], drunkActual   = [], pctActual   = [];
+    const yearsForecast = [], totalForecast = [], drunkForecast = [], pctForecast = [];
+    Object.keys(duiData).forEach(y => {
+      const n = +y, { total, drunk, percentage, forecast } = duiData[y];
+      if (n <= 2023 && !forecast) {
+        yearsActual.push(n);
+        totalActual.push(total);
+        drunkActual.push(drunk);
+        pctActual.push(percentage);
+      } else {
+        yearsForecast.push(n);
+        totalForecast.push(total);
+        drunkForecast.push(drunk);
+        pctForecast.push(percentage);
+      }
+    });
+    const allYears = yearsActual.concat(yearsForecast);
+    const allPct   = pctActual.concat(pctForecast);
+
+    // Gradient helper
+    function makeGradient(ctx, color) {
+      const grad = ctx.createLinearGradient(0, 0, 0, 400);
+      grad.addColorStop(0, color.replace(/rgba\((.+),[\d.]+\)/, 'rgba($1,0.8)'));
+      grad.addColorStop(1, color.replace(/rgba\((.+),[\d.]+\)/, 'rgba($1,0.2)'));
+      return grad;
+    }
+
+    // Blink helpers
+    function clearOverlay(id) {
+      document.getElementById(id).innerHTML = '';
+    }
+    function blinkDot(x, y, id) {
+      const d = document.createElement('div');
+      d.className = 'blink-circle';
+      d.style.left = x + 'px';
+      d.style.top  = y + 'px';
+      document.getElementById(id).appendChild(d);
+    }
+
+    // ----- Line Chart -----
+    let chartInstance;
+    function createChart() {
+      const ctx = document.getElementById('chartCanvas').getContext('2d');
+      const red = makeGradient(ctx, 'rgba(220,53,69,1)');
+      const yel = makeGradient(ctx, 'rgba(255,193,7,1)');
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: allYears,
+          datasets: [
+            { label:'Total Fatalities (Actual)',     data: totalActual,   borderColor: red, backgroundColor: 'transparent', fill:false, tension:0.3, pointRadius:6 },
+            { label:'Total Fatalities (Forecast)',   data: Array(yearsActual.length).fill(null).concat(totalForecast), borderColor: red, borderDash:[5,5], backgroundColor:'transparent', fill:false, tension:0.3, pointStyle:'triangle', pointRadius:6 },
+            { label:'Drunk Driving (Actual)',        data: drunkActual,   borderColor: yel, backgroundColor:'transparent', fill:false, tension:0.3, pointRadius:6 },
+            { label:'Drunk Driving (Forecast)',      data: Array(yearsActual.length).fill(null).concat(drunkForecast), borderColor: yel, borderDash:[5,5], backgroundColor:'transparent', fill:false, tension:0.3, pointStyle:'triangle', pointRadius:6 }
+          ]
+        },
+        options: {
+          animation:{duration:0},responsive:true,maintainAspectRatio:false,
+          interaction:{mode:'nearest',intersect:true},layout:{padding:{right:40}},
+          scales:{
+            x:{ title:{display:true,text:'Year',color:'#fff'}, ticks:{color:'#fff'}, grid:{color:'rgba(255,255,255,0.1)'}},
+            y:{ title:{display:true,text:'Fatalities',color:'#fff'}, ticks:{color:'#fff'}, grid:{color:'rgba(255,255,255,0.1)'}}
+          },
+          plugins:{
+            legend:{ labels:{color:'#fff',boxWidth:12}},
+            tooltip:{enabled:false,external:()=>{}},
+            datalabels:{
+              clip:false,display:ctx=>ctx.active,
+              align:ctx=>ctx.dataIndex>=allYears.length-3?'left':'top',
+              anchor:ctx=>ctx.dataIndex>=allYears.length-3?'end':'center',
+              backgroundColor:'rgba(0,0,0,0.75)',borderRadius:4,padding:4,
+              color:'#fff',font:{weight:'bold',size:12},
+              formatter:(v,ctx)=>ctx.dataset.label.replace(/\s*\(.+?\)/,'')+': '+v.toLocaleString()
+            }
+          }
+        }
+      });
+    }
+
+    // ----- Donut Chart -----
+    const decadeLabels = ['1980s','1990s','2000s','2010s','2020s'];
+    const donutData     = [297,242,219,176,66];
+    const baseBg        = [
+      'rgba(220,53,69,0.6)',
+      'rgba(255,193,7,0.6)',
+      'rgba(40,167,69,0.6)',
+      'rgba(23,162,184,0.6)',
+      'rgba(111,66,193,0.6)'
+    ];
+    const baseBd = baseBg.map(c=>c.replace(/0\.6\)$/,'1)'));
+    let donutChart;
+    function createDonutChart() {
+      const ctx = document.getElementById('donutCanvas').getContext('2d');
+      donutChart = new Chart(ctx,{
+        type:'doughnut',
+        data:{
+          labels:decadeLabels,
+          datasets:[{
+            data:donutData,
+            backgroundColor:baseBg.slice(),
+            borderColor:baseBd.slice(),
+            borderWidth:Array(5).fill(2),
+            hoverOffset:10
+          }]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,cutout:'60%',
+          plugins:{
+            legend:{labels:{color:'#fff',boxWidth:12}},
+            datalabels:{
+              color:'#fff',font:{weight:'bold',size:14},
+              formatter:(v,ctx)=>( (v/ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0)*100).toFixed(1)+'%' )
+            }
+          }
+        }
+      });
+    }
+
+    // ----- Bar Chart -----
+    const barData = [190104,148020,133095,106115,40337];
+    let barChart, highlightedIndex = null;
+    function createBarChart() {
+      const ctx = document.getElementById('barCanvas').getContext('2d');
+      barChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: decadeLabels,
+          datasets: [{
+            label: 'Total Fatalities',
+            data: barData,
+            backgroundColor: baseBg.slice(),
+            borderColor: baseBd.slice(),
+            borderWidth: Array(5).fill(2)
+          }]
+        },
+        options: {
+          responsive:true,maintainAspectRatio:false,
+          scales:{
+            x:{
+              ticks:{
+                color:'#fff',
+                font:ctx=>({weight:ctx.index===highlightedIndex?'bold':'normal',size:12})
+              },
+              grid:{color:'rgba(255,255,255,0.1)'}
+            },
+            y:{
+              beginAtZero:true,
+              ticks:{color:'#fff',callback:v=>v.toLocaleString()},
+              grid:{color:'rgba(255,255,255,0.1)'}
+            }
+          },
+          plugins:{
+            legend:{
+              labels:{
+                color:'#fff',
+                fontColor:'#fff',
+                generateLabels: chart => chart.data.labels.map((l,i)=>({
+                  text: l,
+                  fillStyle: chart.data.datasets[0].backgroundColor[i],
+                  hidden: chart.getDatasetMeta(0).data[i].hidden,
+                  index: i,
+                  fontColor: '#fff'
+                }))
+              },
+              onClick:(e,li,leg)=>{
+                const ci=leg.chart, meta=ci.getDatasetMeta(0);
+                meta.data[li.index].hidden = !meta.data[li.index].hidden;
+                ci.update();
+              }
+            },
+            datalabels:{
+              color:'#fff',anchor:'end',align:'end',offset:6,
+              formatter:v=>v.toLocaleString()
+            },
+            tooltip:{
+              callbacks:{ label:ctx=>ctx.parsed.y.toLocaleString() }
+            }
+          }
+        }
+      });
+    }
+
+    // ----- Percentage Chart (Orange) -----
+    let percentChart;
+    function createPercentChart(){
+      const ctx = document.getElementById('percentCanvas').getContext('2d');
+      const orange = makeGradient(ctx,'rgba(255,159,64,1)');
+      percentChart = new Chart(ctx, {
+        type:'line',
+        data:{
+          labels: allYears,
+          datasets:[{
+            label:'DUI % of Total',
+            data: allPct,
+            borderColor: orange,
+            backgroundColor:'transparent',
+            fill:false,
+            tension:0.3,
+            pointRadius:6,
+            pointHoverRadius:8
+          }]
+        },
+        options:{
+          animation:{duration:0},responsive:true,maintainAspectRatio:false,
+          interaction:{mode:'nearest',intersect:true},layout:{padding:{right:40}},
+          scales:{
+            x:{title:{display:true,text:'Year',color:'#fff'},ticks:{color:'#fff'},grid:{color:'rgba(255,255,255,0.1)'}},
+            y:{title:{display:true,text:'Percentage (%)',color:'#fff'},ticks:{color:'#fff'},grid:{color:'rgba(255,255,255,0.1)'}}
+          },
+          plugins:{
+            legend:{labels:{color:'#fff',boxWidth:12}},
+            tooltip:{enabled:false,external:()=>{}},
+            datalabels:{
+              clip:false,display:ctx=>ctx.active,
+              align:ctx=>ctx.dataIndex>=allYears.length-3?'left':'top',
+              anchor:ctx=>ctx.dataIndex>=allYears.length-3?'end':'center',
+              backgroundColor:'rgba(0,0,0,0.75)',borderRadius:4,padding:4,
+              color:'#fff',font:{weight:'bold',size:12},
+              formatter:v=>v.toFixed(1)+'%'
+            }
+          }
+        }
+      });
+    }
+
+    // ----- Highlight & UI handlers -----
+    function highlightYearOnChart(year){
+      const idx = allYears.indexOf(year);
+      clearOverlay('blinkOverlay');
+      clearOverlay('percentBlink');
+      if(idx<0) return;
+      chartInstance.data.datasets.forEach((ds,i)=>{
+        const meta = chartInstance.getDatasetMeta(i);
+        if(meta.data[idx] && ds.data[idx]!==null){
+          blinkDot(meta.data[idx].x, meta.data[idx].y, 'blinkOverlay');
+        }
+      });
+      const pm = percentChart.getDatasetMeta(0).data[idx];
+      blinkDot(pm.x, pm.y, 'percentBlink');
+    }
+
+    function highlightDecade(year){
+      if(!donutChart||!barChart) return;
+      let i = Math.floor((year-1980)/10);
+      i = Math.max(0,Math.min(4,i));
+      highlightedIndex = i;
+      // donut highlight
+      donutChart.data.datasets[0].backgroundColor = baseBg.slice();
+      donutChart.data.datasets[0].borderWidth     = Array(5).fill(2);
+      donutChart.data.datasets[0].backgroundColor[i] = baseBg[i].replace('0.6','1');
+      donutChart.data.datasets[0].borderWidth[i]     = 6;
+      donutChart.update();
+      // bar highlight
+      barChart.data.datasets[0].backgroundColor = baseBg.slice();
+      barChart.data.datasets[0].borderWidth     = Array(5).fill(2);
+      barChart.data.datasets[0].backgroundColor[i] = baseBg[i].replace('0.6','1');
+      barChart.data.datasets[0].borderWidth[i]     = 6;
+      barChart.update();
+    }
+
+    function getData(){
+      const y = parseInt(document.getElementById('yearInput').value,10);
+      const r = document.getElementById('result');
+      clearOverlay('blinkOverlay');
+      clearOverlay('percentBlink');
+      if(isNaN(y)){
+        r.innerHTML='<p>Please enter a valid numeric year.</p>';
+        return r.classList.add('show');
+      }
+      if(y<1980||y>2030){
+        r.innerHTML='<p>Please enter a year between 1980 and 2030.</p>';
+        return r.classList.add('show');
+      }
+      const s = duiData[y];
+      if(!s){
+        r.innerHTML=`<p>No data available for ${y}. Update your dataset.</p>`;
+        return r.classList.add('show');
+      }
+      r.innerHTML=`
+        <p><strong>Year:</strong> ${y}</p>
+        <p><strong>Total Fatalities:</strong> ${s.total?.toLocaleString() ?? 'N/A'}</p>
+        <p><strong>Drunk Driving:</strong> ${s.drunk?.toLocaleString() ?? 'N/A'}</p>
+        <p><strong>% DUI:</strong> ${s.percentage.toFixed(1)}%</p>
+        ${s.forecast?'<p style="color:lightgreen;"><em>Forecast value</em></p>':''}
+      `;
+      r.classList.add('show');
+      ['chartContainer','donutContainer','barContainer','percentContainer']
+        .forEach(id=>document.getElementById(id).style.display='block');
+      if(!chartInstance) createChart();
+      if(!donutChart)   createDonutChart();
+      if(!barChart)     createBarChart();
+      if(!percentChart) createPercentChart();
+      highlightYearOnChart(y);
+      highlightDecade(y);
+    }
+
+    function resetData(){
+      document.getElementById('yearInput').value='';
+      const r=document.getElementById('result');
+      r.innerHTML=''; r.classList.remove('show');
+      clearOverlay('blinkOverlay');
+      clearOverlay('percentBlink');
+      ['chartContainer','donutContainer','barContainer','percentContainer']
+        .forEach(id=>document.getElementById(id).style.display='none');
+    }
+
+    document.getElementById('getDataButton').addEventListener('click', getData);
+    document.getElementById('resetDataButton').addEventListener('click', resetData);
+    document.getElementById('yearInput').addEventListener('keypress', e=>{
+      if(e.key==='Enter'){ e.preventDefault(); getData(); }
+    });
+  </script>
+</body>
+</html>
+
+
